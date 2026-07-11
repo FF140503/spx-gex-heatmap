@@ -58,12 +58,19 @@ def load_asset_gex(symbol, expiry_date):
         net_gex = (calls['openInterest'].fillna(0) - puts['openInterest'].fillna(0)) / 1000.0
         df_final = pd.DataFrame(net_gex, columns=[expiry_date])
         
-        hist = tk.history(period="1d")
-        spot_price = hist['Close'].iloc[-1] if not hist.empty else df_final.index.median()
-        
-        range_limit = 35 if symbol in ["NVDA", "TSLA", "META"] else 75
-        df_final = df_final.loc[int(spot_price)-range_limit : int(spot_price)+range_limit]
-        
+        # حماية الموقع لو كان السوق مغلقاً (الأحد)
+        hist = tk.history(period="5d")
+        if not hist.empty and 'Close' in hist.columns:
+            spot_price = hist['Close'].iloc[-1]
+        else:
+            spot_price = df_final.index.median() if not df_final.empty else 100.0
+            
+        # فلترة النطاق بذكاء تفادياً للكراش
+        if not df_final.empty:
+            min_strike = int(spot_price) - (35 if symbol in ["NVDA", "TSLA", "META"] else 75)
+            max_strike = int(spot_price) + (35 if symbol in ["NVDA", "TSLA", "META"] else 75)
+            df_final = df_final.loc[min_strike:max_strike]
+            
         return df_final, spot_price
     except:
         return pd.DataFrame(), 0
@@ -72,7 +79,7 @@ if selected_expiry:
     with st.spinner("جاري معالجة البيانات الحية للسوق..."):
         df_data, current_spot = load_asset_gex(ticker_symbol, selected_expiry)
         
-    if not df_data.empty:
+    if not df_data.empty and current_spot > 0:
         st.metric(label=f"السعر الحالي لـ {selected_asset_label}", value=f"${current_spot:,.2f}")
         
         fig = px.imshow(
@@ -85,4 +92,4 @@ if selected_expiry:
         fig.update_layout(plot_bgcolor="#0d1117", paper_bgcolor="#0d1117", font_color="#ffffff", height=800)
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.warning("فشل في تنظيم مصفوفة البيانات، جرب تاريخاً آخر.")
+        st.warning("⚠️ لا توجد سيولة كافية مسجلة لهذه العقود اليوم أو أن الداتا التاريخية غير متاحة حالياً، جرب اختيار أصل آخر مثل NVDA أو TSLA.")
